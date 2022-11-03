@@ -1,6 +1,7 @@
 const properties = require('./json/properties.json');
 const users = require('./json/users.json');
 const { Pool } = require('pg');
+const { query } = require('express');
 
 /// Database Connection
 
@@ -77,13 +78,13 @@ exports.addUser = addUser;
 const getAllReservations = function(guest_id, limit = 10) {
   return pool.query(`
     SELECT reservations.*, properties.*, avg(property_reviews.rating) as average_rating
-    FROM reservations
-    JOIN properties ON reservations.property_id = properties.id
-    JOIN property_reviews ON reservations.property_id = property_reviews.property_id
-    WHERE reservations.guest_id = $1
-    GROUP BY reservations.id, properties.id
-    ORDER BY reservations.start_date
-    LIMIT $2;`, [guest_id, limit])
+      FROM reservations
+      JOIN properties ON reservations.property_id = properties.id
+      JOIN property_reviews ON reservations.property_id = property_reviews.property_id
+      WHERE reservations.guest_id = $1
+      GROUP BY reservations.id, properties.id
+      ORDER BY reservations.start_date
+      LIMIT $2;`, [guest_id, limit])
     .then((response)=> {
       console.log(response.rows);
       return response.rows;
@@ -104,12 +105,80 @@ exports.getAllReservations = getAllReservations;
  */
 const getAllProperties = function(options, limit = 10) {
 
-  return pool.query(`SELECT * FROM properties LIMIT $1;`, [limit])
+  // 1 escaped params
+  const queryParams = [];
+
+  // 2 CORE SQL 
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+    FROM properties
+    JOIN property_reviews ON property_reviews.property_id = properties.id
+  `;
+  // 3 SQL if city is filtered
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    queryString += `
+    WHERE city LIKE $${queryParams.length}`;
+  }
+
+  // 4 CORE SQL
+  queryString += `
+    GROUP BY properties.id
+  `;
+
+  // 5 SQL if rating is filtered
+  if (options.minimum_rating) {
+    queryParams.push(options.minimum_rating);
+    queryString += `
+    HAVING avg(property_reviews.rating) >= $${queryParams.length}`
+  }
+
+  // 6 SQL if minimum cost is filtered -  input will depends whether rating was also included
+  if (options.minimum_price_per_night && options.minimum_rating) {
+    queryParams.push(options.minimum_price_per_night * 100);
+    queryString += `
+    AND cost_per_night > $${queryParams.length}
+    `;
+  } else if (options.minimum_price_per_night) {
+    queryParams.push(options.minimum_price_per_night * 100);
+    queryString += `
+    HAVING cost_per_night > $${queryParams.length}
+    `;
+  }
+
+  // 7 SQL if maxmum cost is filtered -  input will depends whether rating or minimum was also included
+  if (options.maximum_price_per_night && (options.minimum_price_per_night || options.minimum_rating)) {
+    queryParams.push(options.maximum_price_per_night * 100);
+    queryString += `
+    AND cost_per_night < $${queryParams.length}
+    `;
+  } else if (options.maximum_price_per_night) {
+    queryParams.push(options.maximum_price_per_night * 100);
+    queryString += `
+    HAVING cost_per_night < $${queryParams.length}
+    `;
+  }
+
+  // 8 CORE SQL
+  queryString += `
+    ORDER BY cost_per_night
+  `;
+
+
+  // 9 SQL if a limit is included
+  queryParams.push(limit);
+  
+  queryString += `
+    LIMIT $${queryParams.length};
+  `;
+      
+  // Execution of query
+  return pool.query(queryString, queryParams)
     .then((result) => {
       return result.rows;
       })
     .catch((err) => {
-      return err; // add throw err instead?
+      console.log(err); // add throw err instead?
     });
 };
 exports.getAllProperties = getAllProperties;
