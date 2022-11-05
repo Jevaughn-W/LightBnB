@@ -1,9 +1,4 @@
-const properties = require('../json/properties.json');
-const users = require('../json/users.json');
 const db = require('./index');
-const { query } = require('express');
-const res = require('express/lib/response');
-
 
 /// Users
 
@@ -199,5 +194,5 @@ const addProperty = function(property) {
     .catch((err)=> {
       console.log(err);
     });
-}
+};
 exports.addProperty = addProperty;

@@ -10,6 +10,6 @@ const pool = new Pool({
 
 module.exports = {
   query: (queryString, params) => {
-    return pool.query(queryString, params)
+    return pool.query(queryString, params);
   }
-}
+};
